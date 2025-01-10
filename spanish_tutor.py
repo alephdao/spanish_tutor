@@ -273,41 +273,54 @@ def handle_audio(message):
         # Get file info
         if message.voice:
             file_info = bot.get_file(message.voice.file_id)
-            mime_type = 'audio/ogg'  # Telegram voice messages are typically OGG
+            mime_type = 'audio/ogg'
         else:
             file_info = bot.get_file(message.audio.file_id)
-            mime_type = 'audio/mpeg'  # Default for audio files
+            mime_type = 'audio/mpeg'
 
         # Create temporary file to store the audio
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.m4a') as temp_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg' if message.voice else '.mp3') as temp_file:
+            # Download and write file in binary mode
             downloaded_file = bot.download_file(file_info.file_path)
             temp_file.write(downloaded_file)
             temp_file_path = temp_file.name
 
-        # Upload file to Gemini with mime_type specified
-        gemini_file = genai.upload_file(path=temp_file_path, mime_type=mime_type)
-        
-        # Generate response using the helper function
-        response = generate_gemini_response(
-            GEMINI_PROMPT,
-            message.from_user.id,
-            'Audio message sent',
-            gemini_file
-        )
-        
-        # Generate audio response
-        audio_file = synthesize_speech(response)
-        
-        # Send text and audio responses
-        bot.reply_to(message, response)
-        with open(audio_file, 'rb') as audio:
-            bot.send_voice(message.chat.id, audio)
+        # Ensure file is properly closed before upload
+        try:
+            # Convert audio to a consistent format using pydub
+            audio = AudioSegment.from_file(temp_file_path)
+            converted_path = temp_file_path + '.converted.mp3'
+            audio.export(converted_path, format='mp3', parameters=['-ac', '1'])  # Convert to mono
             
-        # Cleanup temporary files
-        os.unlink(temp_file_path)
-        os.unlink(audio_file)
+            # Upload the converted file to Gemini
+            gemini_file = genai.upload_file(path=converted_path, mime_type='audio/mpeg')
+            
+            # Generate response using the helper function
+            response = generate_gemini_response(
+                GEMINI_PROMPT,
+                message.from_user.id,
+                'Audio message sent',
+                gemini_file
+            )
+            
+            # Generate audio response
+            audio_file = synthesize_speech(response)
+            
+            # Send text and audio responses
+            bot.reply_to(message, response)
+            with open(audio_file, 'rb') as audio:
+                bot.send_voice(message.chat.id, audio)
+                
+        finally:
+            # Cleanup temporary files
+            os.unlink(temp_file_path)
+            if os.path.exists(converted_path):
+                os.unlink(converted_path)
+            if 'audio_file' in locals() and os.path.exists(audio_file):
+                os.unlink(audio_file)
 
     except Exception as e:
+        logger.error(f"Error processing audio: {str(e)}", exc_info=True)
         bot.reply_to(message, f"Sorry, there was an error processing your audio: {str(e)}")
 
 # Start the bot
