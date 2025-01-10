@@ -273,8 +273,10 @@ def handle_audio(message):
         # Get file info
         if message.voice:
             file_info = bot.get_file(message.voice.file_id)
+            mime_type = 'audio/ogg'  # Telegram voice messages are typically OGG
         else:
             file_info = bot.get_file(message.audio.file_id)
+            mime_type = 'audio/mpeg'  # Default for audio files
 
         # Create temporary file to store the audio
         with tempfile.NamedTemporaryFile(delete=False, suffix='.m4a') as temp_file:
@@ -282,8 +284,8 @@ def handle_audio(message):
             temp_file.write(downloaded_file)
             temp_file_path = temp_file.name
 
-        # Upload file to Gemini
-        gemini_file = genai.upload_file(path=temp_file_path)
+        # Upload file to Gemini with mime_type specified
+        gemini_file = genai.upload_file(path=temp_file_path, mime_type=mime_type)
         
         # Generate response using the helper function
         response = generate_gemini_response(
