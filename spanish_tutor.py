@@ -70,14 +70,19 @@ if deployment_mode == 'aws':
 else:
     logger.info("Running in local mode - getting credentials from keyring")
     telegram_token = keyring.get_password('api_telegram_spanish_tutor', 'galebach_spanish_bot_token')
-    # google_api_key = keyring.get_password('api_default_GOOGLE_AI_API_KEY', 'GOOGLE_API_KEY')
-    # genai.configure(api_key=google_api_key)
-    # configuring gemini with google api key from keyring first didn't work. below works
-    genai.configure(api_key=keyring.get_password('api_default_GOOGLE_AI_API_KEY', 'GOOGLE_API_KEY')) 
+    genai.configure(api_key=keyring.get_password('api_default_GOOGLE_AI_API_KEY', 'GOOGLE_API_KEY'))
 
+    # Only set these variables in local mode
     aws_access_key = keyring.get_password('api_default_AWS_ACCESS_KEY_ID', 'AWS_ACCESS_KEY_ID')
     aws_secret_key = keyring.get_password('api_default_AWS_SECRET_ACCESS_KEY', 'AWS_SECRET_ACCESS_KEY')
-    aws_region = keyring.get_password('api_default_AWS_DEFAULT_REGION', 'AWS_DEFAULT_REGION')  
+    aws_region = keyring.get_password('api_default_AWS_DEFAULT_REGION', 'AWS_DEFAULT_REGION')
+
+    # Configure Polly with explicit credentials for local mode
+    polly = boto3_client('polly',
+        aws_access_key_id=aws_access_key,
+        aws_secret_access_key=aws_secret_key,
+        region_name=aws_region
+    )
 
 # Verify all credentials were retrieved
 required_credentials = {
