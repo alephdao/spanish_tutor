@@ -37,15 +37,8 @@ def get_deployment_mode():
         requests.get('http://169.254.169.254/latest/meta-data/', timeout=1)
         logger.info("Running on AWS instance")
         
-        # If we are in AWS, then check Parameter Store
-        ssm = boto3_client('ssm', region_name='us-east-1')
-        response = ssm.get_parameter(
-            Name='spanish_tutor_deployment_mode',
-            WithDecryption=False
-        )
-        mode = response['Parameter']['Value'].lower()
-        logger.info(f"Found deployment mode in AWS: {mode}")
-        return mode
+        # If we are in AWS, use instance role credentials
+        return 'aws'
         
     except (requests.RequestException, Exception) as e:
         logger.info("Not running on AWS instance, defaulting to local mode")
@@ -66,15 +59,13 @@ def get_aws_parameter(parameter_name):
 # Get credentials based on deployment mode
 deployment_mode = get_deployment_mode()
 if deployment_mode == 'aws':
-    logger.info("Running in AWS mode - getting credentials from Parameter Store")
-    # Try AWS Parameter Store first
+    logger.info("Running in AWS mode - using instance role credentials")
+    # Use instance role credentials for AWS services
     telegram_token = get_aws_parameter('galebach_spanish_bot_token')
-    # google_api_key = get_aws_parameter('GOOGLE_API_KEY')
     genai.configure(api_key=get_aws_parameter('GOOGLE_API_KEY'))
-
-    aws_access_key = get_aws_parameter('AWS_ACCESS_KEY_ID')
-    aws_secret_key = get_aws_parameter('AWS_SECRET_ACCESS_KEY')
-    aws_region = get_aws_parameter('AWS_DEFAULT_REGION')
+    
+    # Create AWS clients using instance role credentials
+    polly = boto3_client('polly', region_name='us-east-1')
 
 else:
     logger.info("Running in local mode - getting credentials from keyring")
@@ -91,10 +82,6 @@ else:
 # Verify all credentials were retrieved
 required_credentials = {
     'Telegram Token': telegram_token,
-    # 'Google API Key': google_api_key,
-    'AWS Access Key': aws_access_key,
-    'AWS Secret Key': aws_secret_key,
-    'AWS Region': aws_region
 }
 
 for cred_name, cred_value in required_credentials.items():
