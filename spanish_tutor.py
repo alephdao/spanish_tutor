@@ -11,6 +11,8 @@ from contextlib import contextmanager
 import logging
 import requests
 import tempfile
+import base64
+import aiohttp
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -237,6 +239,16 @@ def synthesize_speech(text):
         print(f"Error in speech synthesis: {str(e)}")
         raise
 
+async def download_file(file_info):
+    """Download a file from Telegram servers"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(file_info.file_path) as response:
+                return await response.read()
+    except Exception as e:
+        logger.error(f"Error downloading file: {str(e)}")
+        raise
+
 @bot.message_handler(content_types=['text'])
 def handle_text(message):
     try:
@@ -268,7 +280,8 @@ def handle_text(message):
         bot.reply_to(message, f"Sorry, there was an error processing your message: {str(e)}")
 
 @bot.message_handler(content_types=['voice', 'audio'])
-def handle_audio(message):
+async def handle_audio(message):
+    """Handle voice messages and audio files"""
     try:
         # Get file info
         if message.voice:
@@ -276,52 +289,45 @@ def handle_audio(message):
             mime_type = 'audio/ogg'
         else:
             file_info = bot.get_file(message.audio.file_id)
-            mime_type = 'audio/mpeg'
+            mime_type = message.audio.mime_type
 
-        # Create temporary file to store the audio
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg' if message.voice else '.mp3') as temp_file:
-            # Download and write file in binary mode
-            downloaded_file = bot.download_file(file_info.file_path)
-            temp_file.write(downloaded_file)
-            temp_file_path = temp_file.name
+        # Download audio data
+        audio_data = await download_file(file_info)
+        
+        # Convert to base64 for Gemini
+        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+        
+        # Create Gemini content parts
+        gemini_file = {
+            "inline_data": {
+                "mime_type": mime_type,
+                "data": audio_base64
+            }
+        }
 
-        # Ensure file is properly closed before upload
-        try:
-            # Convert audio to a consistent format using pydub
-            audio = AudioSegment.from_file(temp_file_path)
-            converted_path = temp_file_path + '.converted.mp3'
-            audio.export(converted_path, format='mp3', parameters=['-ac', '1'])  # Convert to mono
+        # Generate response using the helper function
+        response = generate_gemini_response(
+            GEMINI_PROMPT,
+            message.from_user.id,
+            'Audio message sent',
+            gemini_file
+        )
+        
+        # Generate audio response
+        audio_file = synthesize_speech(response)
+        
+        # Send text and audio responses
+        bot.reply_to(message, response)
+        with open(audio_file, 'rb') as audio:
+            bot.send_voice(message.chat.id, audio)
             
-            # Upload the converted file to Gemini
-            gemini_file = genai.upload_file(path=converted_path, mime_type='audio/mpeg')
-            
-            # Generate response using the helper function
-            response = generate_gemini_response(
-                GEMINI_PROMPT,
-                message.from_user.id,
-                'Audio message sent',
-                gemini_file
-            )
-            
-            # Generate audio response
-            audio_file = synthesize_speech(response)
-            
-            # Send text and audio responses
-            bot.reply_to(message, response)
-            with open(audio_file, 'rb') as audio:
-                bot.send_voice(message.chat.id, audio)
-                
-        finally:
-            # Cleanup temporary files
-            os.unlink(temp_file_path)
-            if os.path.exists(converted_path):
-                os.unlink(converted_path)
-            if 'audio_file' in locals() and os.path.exists(audio_file):
-                os.unlink(audio_file)
-
     except Exception as e:
         logger.error(f"Error processing audio: {str(e)}", exc_info=True)
         bot.reply_to(message, f"Sorry, there was an error processing your audio: {str(e)}")
+    finally:
+        # Cleanup temporary file if it exists
+        if 'audio_file' in locals() and os.path.exists(audio_file):
+            os.unlink(audio_file)
 
 # Start the bot
 if __name__ == "__main__":
