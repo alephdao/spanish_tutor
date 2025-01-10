@@ -63,7 +63,7 @@ if deployment_mode == 'aws':
     logger.info("Running in AWS mode - using instance role credentials")
     # Use instance role credentials for AWS services
     telegram_token = get_aws_parameter('galebach_spanish_bot_token')
-    genai.configure(api_key=get_aws_parameter('GOOGLE_API_KEY'))
+    genai.configure(api_key=get_aws_parameter('GOOGLE_AI_API_KEY'))
     
     # Create AWS clients using instance role credentials
     polly = boto3_client('polly', region_name='us-east-1')
