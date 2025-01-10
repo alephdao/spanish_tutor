@@ -242,8 +242,11 @@ def synthesize_speech(text):
 def download_file(file_info):
     """Download a file from Telegram servers synchronously"""
     try:
-        import requests
-        response = requests.get(file_info.file_path)
+        # Get the full file path from Telegram's API
+        file_path = f"https://api.telegram.org/file/bot{telegram_token}/{file_info.file_path}"
+        
+        response = requests.get(file_path)
+        response.raise_for_status()  # Raise exception for bad status codes
         return response.content
     except Exception as e:
         logger.error(f"Error downloading file: {str(e)}")
@@ -281,27 +284,36 @@ def handle_text(message):
 
 @bot.message_handler(content_types=['voice', 'audio'])
 def handle_audio(message):
-    """Handle voice messages and audio files"""
+    """
+    Handle voice messages and audio files from Telegram
+    Supports both voice messages and audio file uploads
+    """
     try:
-        # Get file info
+        # Send processing message
+        processing_msg = bot.reply_to(message, "Processing your audio... Please wait.")
+        
+        # Get file info and determine correct mime type
         if message.voice:
             file_info = bot.get_file(message.voice.file_id)
-            mime_type = 'audio/ogg'
+            # Telegram voice messages are always in OGG format with OPUS codec
+            mime_type = 'audio/ogg; codecs=opus'
         else:
             file_info = bot.get_file(message.audio.file_id)
-            mime_type = message.audio.mime_type
+            # For audio files, use the mime type provided by Telegram
+            mime_type = getattr(message.audio, 'mime_type', 'audio/ogg')
 
-        # Download audio data
+        # Download audio data using file_path from file_info
+        if not hasattr(file_info, 'file_path'):
+            raise ValueError("Could not get file path from Telegram")
+            
         audio_data = download_file(file_info)
+        logger.info(f"Downloaded audio file, size: {len(audio_data)} bytes, mime_type: {mime_type}")
         
-        # Convert to base64 for Gemini
-        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
-        
-        # Create Gemini content parts
+        # Create properly formatted Gemini content
         gemini_file = {
             "inline_data": {
                 "mime_type": mime_type,
-                "data": audio_base64
+                "data": base64.b64encode(audio_data).decode('utf-8')
             }
         }
 
@@ -313,6 +325,9 @@ def handle_audio(message):
             gemini_file
         )
         
+        # Delete processing message
+        bot.delete_message(message.chat.id, processing_msg.message_id)
+        
         # Generate audio response
         audio_file = synthesize_speech(response)
         
@@ -323,7 +338,12 @@ def handle_audio(message):
             
     except Exception as e:
         logger.error(f"Error processing audio: {str(e)}", exc_info=True)
-        bot.reply_to(message, f"Sorry, there was an error processing your audio: {str(e)}")
+        error_message = (
+            "Sorry, there was an error processing your audio file.\n"
+            f"Error: {str(e)}\n\n"
+            "Note: telegram bots have a 20MB file limit."
+        )
+        bot.reply_to(message, error_message)
     finally:
         # Cleanup temporary file if it exists
         if 'audio_file' in locals() and os.path.exists(audio_file):
