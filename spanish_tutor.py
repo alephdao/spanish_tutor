@@ -239,12 +239,12 @@ def synthesize_speech(text):
         print(f"Error in speech synthesis: {str(e)}")
         raise
 
-async def download_file(file_info):
-    """Download a file from Telegram servers"""
+def download_file(file_info):
+    """Download a file from Telegram servers synchronously"""
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(file_info.file_path) as response:
-                return await response.read()
+        import requests
+        response = requests.get(file_info.file_path)
+        return response.content
     except Exception as e:
         logger.error(f"Error downloading file: {str(e)}")
         raise
@@ -280,7 +280,7 @@ def handle_text(message):
         bot.reply_to(message, f"Sorry, there was an error processing your message: {str(e)}")
 
 @bot.message_handler(content_types=['voice', 'audio'])
-async def handle_audio(message):
+def handle_audio(message):
     """Handle voice messages and audio files"""
     try:
         # Get file info
@@ -292,7 +292,7 @@ async def handle_audio(message):
             mime_type = message.audio.mime_type
 
         # Download audio data
-        audio_data = await download_file(file_info)
+        audio_data = download_file(file_info)
         
         # Convert to base64 for Gemini
         audio_base64 = base64.b64encode(audio_data).decode('utf-8')
