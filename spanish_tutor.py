@@ -10,6 +10,7 @@ import gc
 from contextlib import contextmanager
 import logging
 import requests
+import tempfile
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
