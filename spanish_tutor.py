@@ -96,11 +96,6 @@ for cred_name, cred_value in required_credentials.items():
 
 # Configure services with credentials
 bot = telebot.TeleBot(telegram_token)
-polly = boto3_client('polly',
-    aws_access_key_id=aws_access_key,
-    aws_secret_access_key=aws_secret_key,
-    region_name=aws_region
-)
 
 @contextmanager
 def model_context():
